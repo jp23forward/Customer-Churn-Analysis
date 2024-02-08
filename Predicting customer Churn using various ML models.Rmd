@@ -1,0 +1,473 @@
+---
+title: "Untitled"
+author: "John Forward"
+date: "2023-12-30"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#Importing the database from SQL
+library(RMySQL)
+
+USER <- 'root'
+PASSWORD <- 'ENEZEjohn23@'
+HOST <- 'localhost'
+DBNAME <- 'world'
+
+db <- dbConnect(MySQL(), user = USER, password = PASSWORD,
+                host = HOST, dbname = DBNAME, port=3306)
+
+World_Telcochurn <- dbGetQuery(db, statement = "select * from world.telco_customerchurn")
+
+dbDisconnect(db)
+```
+
+```{r}
+#Viewing the data contents
+head(World_Telcochurn)
+summary(World_Telcochurn)
+
+#Checking for missing values
+World_Telcochurn <- na.omit(World_Telcochurn)
+World_Telcochurn <- World_Telcochurn[, colSums(is.na(World_Telcochurn)) == 0]
+
+```
+
+```{r}
+#Loading the necessary Libraries
+library(tidyverse)
+library(dplyr)
+library(rpart)
+library(plyr)
+library(corrplot)
+library(ggplot2)
+library(gridExtra)
+library(ggthemes)
+library(caret)
+library(MASS)
+library(randomForest)
+library(party)
+library(reshape2)
+library(pROC)
+library(glmnet)
+library(factoextra)
+library(pheatmap)
+library(class)
+library(caTools)
+library(rpart.plot)
+library(dendextend)
+library(colorspace)
+library(circlize)
+library(cluster) 
+library(data.table)
+```
+
+
+```{r}
+```
+
+```{r}
+#Converting our variables into factors
+World_Telcochurn <- World_Telcochurn %>%
+  mutate(COLLEGE = ifelse(COLLEGE == 'zero', 0, 1),
+         LEAVE = ifelse(LEAVE == 'STAY', 0, 1),
+         REPORTED_SATISFACTION = factor(REPORTED_SATISFACTION),
+         REPORTED_USAGE_LEVEL = factor(REPORTED_USAGE_LEVEL),
+         CONSIDERING_CHANGE_OF_PLAN = factor(CONSIDERING_CHANGE_OF_PLAN))
+
+
+```
+
+```{r}
+#Exploratory data analysis and feature selection
+#Correlation between numerical values
+numeric.var <- sapply(World_Telcochurn, is.numeric)
+
+corr.matrix <- cor(World_Telcochurn[,numeric.var])
+corrplot(corr.matrix, main="\n\nCorrelation Plot for Numerical Variables", method="number")
+
+```
+
+```{r}
+#Setting seed and Splitting the data
+treedata <- World_Telcochurn[, -1]
+
+str(treedata)
+
+set.seed(123)
+sample_split <- sample.split(treedata$LEAVE, SplitRatio = 0.70)
+Train <- subset(treedata, sample_split == TRUE)
+Test <- subset(treedata, sample_split == FALSE)
+
+```
+
+```{r}
+#Building a Decision Tree Model
+decisiontree_model <- rpart(LEAVE ~ ., data = Train, method = "class", minbucket = 5, maxdepth = 6, cp = 0.001)
+predictions <- predict(decisiontree_model, Test, type = "class")
+conf_matrix <- table(predictions, Test$LEAVE)
+rpart.plot(decisiontree_model)
+```
+
+```{r}
+# save the model
+saveRDS(decisiontree_model, "C:/Users/johnf/Documents/BUSINESS DATA ANALYTICS/DATA SCIENCE/Assessment/decisiontreeModel.RDS")
+
+```
+
+
+```{r}
+#Confusion Matrix, TP, FP, TN, FN
+print(conf_matrix)
+TP <- conf_matrix[2, 2]
+FP <- conf_matrix[2,1]
+TN <- conf_matrix[1,1]
+FN <- conf_matrix[1,2]
+
+accuracy <- (TP + TN)/ sum(conf_matrix)
+precision <- TP/(TP + FP)
+recall <- TP / (TP + FN)
+f1_score <- 2 * (precision * recall) / (precision + recall)
+
+```
+
+```{r}
+#Print the Metrics
+print(paste('Accuracy:', accuracy))
+print(paste('Precision:', precision))
+print(paste('Recall:', recall))
+print(paste('F1_score:', f1_score))
+
+```
+
+```{r}
+#BUILDING A LOGISTIC REGRESSION MODEL
+summary(Train)
+Train$CUSTOMERID  <- NULL 
+
+Telco_model <- glm(LEAVE ~ COLLEGE + INCOME + OVERAGE + LEFTOVER + HOUSE + HANDSET_PRICE + OVER_15MINS_CALLS_PER_MONTH + AVERAGE_CALL_DURATION + REPORTED_SATISFACTION + REPORTED_USAGE_LEVEL + CONSIDERING_CHANGE_OF_PLAN,       
+                     data= Train,    
+                     family="binomial")      
+
+predicted_probabilities <- predict(Telco_model,              
+                                   newdata=Train,      
+                                   type="response") 
+
+summary(Telco_model)
+
+```
+
+```{r}
+# save the model
+saveRDS(Telco_model, "C:/Users/johnf/Documents/BUSINESS DATA ANALYTICS/DATA SCIENCE/Assessment/Telco_model.RDS")
+```
+
+
+```{r}
+#Convert to 0, 1 predictions
+class_prediction <- ifelse(predicted_probabilities >= 0.5, 1, 0)  
+
+# Make a table of predictions vs. actual
+result_table <- table(class_prediction,             
+                      Train$LEAVE)  
+
+result_table
+```
+
+```{r}
+#Confusion Matrix For Logistic Regression
+print(result_table)
+LGR_TP <- result_table[2, 2]
+LGR_FP <- result_table[2,1]
+LGR_TN <- result_table[1,1]
+LGR_FN <- result_table[1,2]
+
+LGR_accuracy <- (LGR_TP + LGR_TN)/ sum(result_table)
+LGR_precision <- LGR_TP/(LGR_TP + LGR_FP)
+LGR_recall <- LGR_TP / (LGR_TP + LGR_FN)
+LGR_f1_score <- 2 * (LGR_precision * LGR_recall) / (LGR_precision + LGR_recall)
+
+```
+
+```{r}
+#Print the Metrics
+print(paste('Accuracy:', LGR_accuracy))
+print(paste('Precision:', LGR_precision))
+print(paste('Recall:', LGR_recall))
+print(paste('F1_score:', LGR_f1_score))
+
+```
+
+```{r}
+## Assigning the Leave variable into a matrix
+LEAVE_labels = World_Telcochurn[,12]
+
+# Encoding the target feature as factor
+World_Telcochurn$LEAVE <- as.numeric(World_Telcochurn$LEAVE)
+
+# Identify Categorical Variables
+categorical_vars <- c("REPORTED_SATISFACTION", "REPORTED_USAGE_LEVEL", "CONSIDERING_CHANGE_OF_PLAN")
+
+# Convert to Factors
+World_Telcochurn[, categorical_vars] <- lapply(World_Telcochurn[, categorical_vars], as.factor)
+
+# One-Hot Encoding
+encoded_data <- model.matrix(~ . - 1, data = World_Telcochurn[, categorical_vars])
+
+# Combine Data
+World_Telcochurn <- cbind(World_Telcochurn, encoded_data)
+
+# Remove the original categorical variables
+World_Telcochurn <- World_Telcochurn[, !(names(World_Telcochurn) %in% categorical_vars)]
+
+# Select only numeric columns for scaling
+numeric_cols <- sapply(World_Telcochurn, is.numeric)
+scaled_data <- scale(World_Telcochurn[, numeric_cols])
+
+# Convert the scaled data back to a dataframe
+scaled_World_Telcochurn <- as.data.frame(scaled_data)
+
+# Split into test and train 80/20
+set.seed(123)
+
+size <- floor(0.8 *  nrow(scaled_World_Telcochurn))
+
+train_ind <- sample(seq_len(nrow(scaled_World_Telcochurn)), size = size)
+
+train_labels <- scaled_World_Telcochurn[train_ind, 12]
+
+knn_train <- scaled_World_Telcochurn[train_ind,1:22]
+knn_test <- scaled_World_Telcochurn[-train_ind,1:22]
+
+test_labels <- LEAVE_labels[-train_ind]
+
+```
+
+```{r}
+# Fit KNN Model
+predictions <- knn(train = knn_train,
+                   test = knn_test,
+                   cl = train_labels,
+                   k= round(sqrt(nrow(knn_train))))
+
+
+# Create a dataframe for plotting predictions
+plot_predictions <- cbind(knn_test, predicted = predictions)
+
+view(plot_predictions)
+
+
+
+
+require(gridExtra)
+
+p1 <- ggplot(plot_predictions, aes(COLLEGE, INCOME, color = predicted, fill = predicted)) + 
+  geom_point(size = 5) + 
+  geom_text(aes(label=test_labels),hjust=1, vjust=2) +
+  ggtitle("Predicted relationship between COLLEGE AND INCOME") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme(legend.position = "none")
+
+p2 <- ggplot(plot_predictions, aes(OVERAGE, LEFTOVER, color = predicted, fill = predicted)) + 
+  geom_point(size = 5) + 
+  geom_text(aes(label=test_labels),hjust=1, vjust=2) +
+  ggtitle("Predicted relationship between OVERAGE AND LEFTOVER")+
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme(legend.position = "none")
+
+grid.arrange(p1, p2, ncol=2)
+```
+
+
+```{r}
+## Remove Customer ID
+World_Telcochurn$CUSTOMERID  <- NULL
+
+#TASK 4: Build a KNN Model;
+KNNdata<-World_Telcochurn
+KNNdata<- KNNdata %>% mutate( LEAVE = factor(LEAVE))
+
+## Scaling The Data
+KNNdata[,2:8]<-scale(KNNdata[,2:8])
+
+## Splitting the data
+set.seed(123)
+intrain<-createDataPartition(KNNdata$LEAVE, p=0.70, list = FALSE)
+KNNTrainData<-KNNdata[intrain,]
+KNNTestData<-KNNdata[-intrain,]
+
+?knn
+
+Grid_values<- expand.grid(k=seq(1, 25, by =2))
+
+KnnModel<- train(LEAVE~.,data = KNNTrainData, method = 'knn',
+    preProcess= c('center', 'scale'),
+    trControl= trainControl(method = 'repeatedcv',number =10, repeats = 5), tuneGrid = Grid_values)
+KnnModel
+#Plot the Model
+KnnResult <- KnnModel$results
+KnnResult |> ggplot(aes(x = k, y = Accuracy)) + geom_point() + geom_line()
+plot(KnnModel) 
+
+confusionMatrix(KnnModel)
+```
+
+```{r}
+# save the model
+saveRDS(KnnModel, "C:/Users/johnf/Documents/BUSINESS DATA ANALYTICS/DATA SCIENCE/Assessment/KnnModel.RDS")
+```
+
+
+```{r}
+# Make predictions on test data
+KnnPredictions <- predict(KnnModel, newdata = KNNTestData)
+
+# Generate confusion matrix
+Knnconfusionmat <- confusionMatrix(data = KnnPredictions, reference = KNNTestData$LEAVE)
+
+# Extracting metrics
+KNNaccuracy <- Knnconfusionmat$overall['Accuracy']
+KNNprecision <- Knnconfusionmat$byClass['Precision']
+KNNrecall <- Knnconfusionmat$byClass['Recall']
+KNNF1_score <- Knnconfusionmat$byClass['F1']
+
+# Displaying metrics
+KNNaccuracy
+KNNprecision
+KNNrecall
+KNNF1_score
+Knnconfusionmat 
+```
+
+```{r}
+#split train and test equally for ROC.
+set.seed(123)
+SplitIndex <- sample(x = c("Train", "Test"), size = nrow(KNNdata), replace = T, prob = c(0.5,0.5))
+KNNTrainData <- filter(KNNdata, SplitIndex == "Train")
+KNNTestData <- filter(KNNdata, SplitIndex == "Test")
+
+#Build the model on training data
+set.seed(123)
+KnnModel2 <- train(form = LEAVE ~ .,
+                  data = KNNTrainData,
+                  method = 'knn')
+
+#Predicted probabilities
+KNNprobability <- predict(object = KnnModel2, newdata = KNNTestData, type = "prob")
+# head(KnnProbs)
+KNNprobability <- KNNprobability[,2]      
+#Generate the ROC
+KnnROC <- roc(response = KNNTestData$LEAVE, predictor = KNNprobability)
+plot(KnnROC, print.auc = T)
+```
+
+```{r}
+## TASK 4
+## K MEANS CLUSTERING
+# For legibility of the next graphic
+set.seed(123)
+Sampletelco <- sample_n(tbl = World_Telcochurn, size = 100)
+
+#Hierarchical clutering - calculate and plot
+TelcoHclust <- hclust(d = dist(x=Sampletelco[,1:11]), method = "average") 
+
+plot(x = TelcoHclust, hang = -1, labels=Sampletelco$LEAVE)
+```
+
+```{r}
+#Compute distances in the WorldTelco data (excluding LEAVE), generate hierarchical clusters
+DistTelco <- dist(x = World_Telcochurn[,1:11], method = "euclidean")  
+
+HcTelco <- hclust(d = DistTelco, method = "complete")
+
+# dendrogram object
+TelcoDend <- as.dendrogram(HcTelco)                       
+
+
+# Save the levels of the Leave column
+LeaveLevs <- rev(levels(World_Telcochurn[,2]))
+
+# Color the branches based on the clusters:
+TelcoDend <- color_branches(dend = TelcoDend, k=3) 
+
+# Manually match the labels, as much as possible, to the real classification
+# assign one of three colours to each label
+labels_colors(TelcoDend) <-
+   rainbow_hcl(3)[sort_levels_values(
+     as.numeric(World_Telcochurn[,2])[order.dendrogram(TelcoDend)]
+     )]
+
+labels(TelcoDend) <- paste(as.character(World_Telcochurn[,5])[order.dendrogram(TelcoDend)], 
+                           "(",labels(TelcoDend),")",           
+                           sep = "")
+# We hang the dendrogram a bit (distance between end of dendrogram and the label):
+TelcoDend <- hang.dendrogram(TelcoDend,hang_height=0.1)
+
+
+
+# plotting the visuals
+par(mar = c(3,3,3,7))
+plot(TelcoDend, 
+     main = "Clustered Telco Churn data set",
+     horiz =  TRUE,   
+     nodePar = list(cex = .007)) 
+# Check if LeaveLevs is not empty before calling legend
+if (length(LeaveLevs) > 0) {
+  legend("topleft", legend = LeaveLevs, fill = rainbow_hcl(length(LeaveLevs)))
+} 
+```
+
+```{r}
+par(mar = rep(1,4))
+circlize_dendrogram(TelcoDend)
+```
+
+```{r}
+# Identify numerical columns
+numerical_columns <- sapply(World_Telcochurn, is.numeric)
+
+# Scale numerical columns
+World_Telcochurn_scaled <- World_Telcochurn
+World_Telcochurn_scaled[, numerical_columns] <- scale(World_Telcochurn[, numerical_columns])
+
+#Set up a new data set, and remove the LEAVE column
+NewTelcochurn <- World_Telcochurn_scaled
+NewTelcochurn$LEAVE <- NULL
+
+# Remove rows with missing values
+NewTelcochurn_no_na <- na.omit(NewTelcochurn)
+# Convert non-numeric columns to numeric if needed
+NewTelcochurn_no_na <- as.data.frame(sapply(NewTelcochurn_no_na, as.numeric))
+
+#Use the kmeans algorithm on the new data, specifying we want k=5 clusters
+KmeanTelcochurn <- kmeans(x = NewTelcochurn_no_na, center = 5) 
+
+#Note how the clusters for the data without species do an okay job of capturing species
+table(LEAVE = World_Telcochurn$LEAVE, Cluster = KmeanTelcochurn$cluster)
+
+# Plots the INCOME and AVERAGE CALL DURATION of the Dataset, 
+
+plot(NewTelcochurn_no_na[c("INCOME", "AVERAGE_CALL_DURATION")], col=KmeanTelcochurn$cluster)
+points(KmeanTelcochurn$centers[,c("INCOME","AVERAGE_CALL_DURATION")], col=1:3, pch=8, cex=2)
+
+```
+
+```{r}
+#What if we didn't want to use only two of the four dimensions for plotting?
+clusplot(NewTelcochurn_no_na, KmeanTelcochurn$cluster, color = TRUE)
+clusplot(NewTelcochurn_no_na, KmeanTelcochurn$cluster, color=TRUE, shade=TRUE, 
+         labels=2, lines=0)
+```
+
+```{r}
+
+
+```
+
